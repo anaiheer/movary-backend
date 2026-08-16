@@ -1,0 +1,6 @@
+# Development-only dependencies (tests, linting).
+# CI installs both requirements.txt and this file; the runtime Docker image
+# installs requirements.txt only.
+aiosqlite==0.22.1
+pytest==9.1.1
+pytest-asyncio==1.4.0

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt -r requirements-dev.txt ruff==0.15.16
+
+      - name: Ruff format (check)
+        run: ruff format --check app tests
+
+      - name: Ruff lint
+        run: ruff check app tests
+
+      - name: Compile backend
+        run: python -m compileall app
+
+      - name: Run tests
+        run: pytest tests -q
