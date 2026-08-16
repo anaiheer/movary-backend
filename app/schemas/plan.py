@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PlanBillingCycleBase(BaseModel):
@@ -20,8 +20,7 @@ class PlanBillingCycleIn(PlanBillingCycleBase):
 class PlanBillingCycleOut(PlanBillingCycleBase):
     id: Optional[UUID] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SubscriptionGroupBase(BaseModel):
@@ -49,8 +48,7 @@ class SubscriptionGroupOut(SubscriptionGroupBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlanBase(BaseModel):
@@ -89,8 +87,7 @@ class PlanResponse(PlanBase):
     updated_at: datetime
     cycles: List[PlanBillingCycleOut] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SubscriptionResponse(BaseModel):
@@ -107,8 +104,7 @@ class SubscriptionResponse(BaseModel):
     end_at: datetime
     vod_times_used: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlanServerAssignmentIn(BaseModel):
@@ -205,8 +201,7 @@ class AdminPlanOut(BaseModel):
     cycles: List[PlanBillingCycleOut] = Field(default_factory=list)
     server_assignments: List[PlanServerAssignmentOut] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PurchasePreviewSubscription(BaseModel):

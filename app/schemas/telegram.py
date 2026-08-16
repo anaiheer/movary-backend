@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 
 from app.schemas.username import normalize_login_identifier
 
@@ -127,8 +127,7 @@ class TelegramBindingOut(BaseModel):
     is_active: bool
     last_interaction_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TelegramNotificationOut(BaseModel):
@@ -140,8 +139,7 @@ class TelegramNotificationOut(BaseModel):
     is_read: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TelegramNotificationListResponse(BaseModel):
@@ -158,8 +156,7 @@ class TelegramNotificationPreferenceOut(BaseModel):
     vod: bool
     ticket: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TelegramNotificationPreferenceUpdate(BaseModel):

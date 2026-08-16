@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from typing import Optional
 from uuid import UUID
 from app.services.site_languages import DEFAULT_SITE_LANGUAGE, SUPPORTED_SITE_LANGUAGES
@@ -164,8 +164,7 @@ class SystemSettingsUpdate(SystemSettingsBase):
 class SystemSettingsOut(SystemSettingsBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SmtpTestRequest(BaseModel):

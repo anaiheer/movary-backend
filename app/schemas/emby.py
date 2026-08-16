@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, AnyHttpUrl
+from pydantic import BaseModel, Field, AnyHttpUrl, ConfigDict
 
 
 class EmbyServerBase(BaseModel):
@@ -52,8 +52,7 @@ class EmbyServerOut(BaseModel):
     user_count: int = 0
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmbyServersResponse(BaseModel):

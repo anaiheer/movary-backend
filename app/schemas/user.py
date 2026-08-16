@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -64,8 +64,7 @@ class UserResponse(UserBase):
     created_at: datetime
     last_login_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserLogin(BaseModel):
@@ -110,8 +109,7 @@ class EmailVerificationRequest(BaseModel):
 class UserListItem(UserResponse):
     expired_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserStats(BaseModel):

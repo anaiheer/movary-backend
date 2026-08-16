@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
@@ -51,8 +51,7 @@ class OrderResponse(BaseModel):
     refund_to: Optional[str] = None
     refund_eligibility: Optional[RefundEligibility] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderPayRequest(BaseModel):

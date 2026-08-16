@@ -3,7 +3,9 @@ import logging
 import subprocess
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,7 +52,29 @@ from app.services.emby_passwords import validate_emby_password_key
 from app.services.system_tasks import shutdown_scheduler, start_scheduler
 
 logger = logging.getLogger(__name__)
-app = FastAPI(title=settings.PROJECT_NAME, debug=settings.DEBUG)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await init_cache()
+    try:
+        validate_emby_password_key()
+    except ValueError as exc:
+        logger.error("Emby password encryption check failed: %s", exc)
+    try:
+        await asyncio.to_thread(_run_migrations)
+    except BaseException as exc:  # noqa: BLE001
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+            logger.info("Auto migration skipped: %s", exc)
+        else:
+            logger.warning("Auto migration failed: %s", exc)
+    await start_scheduler()
+    yield
+    shutdown_scheduler()
+    await close_cache()
+
+
+app = FastAPI(title=settings.PROJECT_NAME, debug=settings.DEBUG, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -137,29 +161,6 @@ def _run_migrations() -> None:
                 time.sleep(5 * (attempt + 1))
             else:
                 raise
-
-
-@app.on_event("startup")
-async def startup_migrate() -> None:
-    await init_cache()
-    try:
-        validate_emby_password_key()
-    except ValueError as exc:
-        logger.error("Emby password encryption check failed: %s", exc)
-    try:
-        await asyncio.to_thread(_run_migrations)
-    except BaseException as exc:  # noqa: BLE001
-        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
-            logger.info("Auto migration skipped: %s", exc)
-            return
-        logger.warning("Auto migration failed: %s", exc)
-    await start_scheduler()
-
-
-@app.on_event("shutdown")
-async def shutdown_scheduler_event() -> None:
-    shutdown_scheduler()
-    await close_cache()
 
 
 @app.get("/")
