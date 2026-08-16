@@ -26,9 +26,7 @@ from app.schemas.subscription_config import (
     SubscriptionPlanUpsert,
 )
 
-router = APIRouter(
-    prefix="/admin/subscription-config", tags=["admin-subscription-config"]
-)
+router = APIRouter(prefix="/admin/subscription-config", tags=["admin-subscription-config"])
 
 DEFAULT_GROUP_KEY = "default"
 DEFAULT_GROUP_NAME = "默认分组"

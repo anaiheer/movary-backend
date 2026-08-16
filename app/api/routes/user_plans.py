@@ -74,9 +74,7 @@ async def _load_visible_plan(db: AsyncSession, plan_id: UUID | None = None) -> P
         stmt = stmt.where(Plan.id == plan_id)
     plans = (await db.execute(stmt.order_by(Plan.created_at.asc()))).scalars().all()
     visible = [
-        plan
-        for plan in plans
-        if plan.group_key == "default" and int(plan.tier_level or 1) == 1
+        plan for plan in plans if plan.group_key == "default" and int(plan.tier_level or 1) == 1
     ]
     return visible[0] if visible else None
 
