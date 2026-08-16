@@ -2,6 +2,7 @@ import asyncio
 import logging
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -123,10 +124,19 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_root)), name="uploads")
 def _run_migrations() -> None:
     base_dir = Path(__file__).resolve().parent.parent
     alembic_ini = base_dir / "alembic.ini"
-    subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
-        check=True,
-    )
+    for attempt in range(3):
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
+                check=True,
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            if attempt < 2:
+                logger.warning("Auto migration attempt %d/3 failed: %s", attempt + 1, exc)
+                time.sleep(5 * (attempt + 1))
+            else:
+                raise
 
 
 @app.on_event("startup")

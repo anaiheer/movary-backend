@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable
@@ -24,6 +26,8 @@ from app.services.telegram import (
     telegram_notification_exists,
 )
 from app.services import tmdb as tmdb_service
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TASKS = [
     {
@@ -393,13 +397,25 @@ def refresh_schedule(task: SystemTask) -> None:
 
 
 async def start_scheduler() -> None:
-    await ensure_default_tasks()
-    async with AsyncSessionLocal() as db:
-        tasks = (await db.execute(select(SystemTask))).scalars().all()
-        for task in tasks:
-            _schedule_task(task)
-    if not scheduler.running:
-        scheduler.start()
+    # 数据库可能在启动瞬间尚未就绪（例如容器网络短暂抖动），重试三次再放弃，
+    # 避免一次瞬时失败就让整个应用启动崩溃。
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            await ensure_default_tasks()
+            async with AsyncSessionLocal() as db:
+                tasks = (await db.execute(select(SystemTask))).scalars().all()
+                for task in tasks:
+                    _schedule_task(task)
+            if not scheduler.running:
+                scheduler.start()
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                logger.warning("Scheduler startup attempt %d/3 failed: %s", attempt + 1, exc)
+                await asyncio.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"Scheduler startup failed after 3 attempts: {last_exc}") from last_exc
 
 
 def shutdown_scheduler() -> None:
