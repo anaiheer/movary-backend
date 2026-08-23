@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
 import shutil
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -12,7 +14,10 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.core.license_config import LICENSE_REQUEST_TIMEOUT_SECONDS
 from app.services.license_runtime import evaluate_cached_license
+
+LOCAL_PRO_BACKEND_PATH = Path("/app/movary-backend-pro")
 
 
 def _base_dir() -> Path:
@@ -104,9 +109,11 @@ def _sha256(path: Path) -> str:
 
 
 async def _download(url: str, target: Path) -> None:
-    timeout = max(int(settings.MOVARY_LICENSE_REQUEST_TIMEOUT or 10), 1)
     target.parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        timeout=LICENSE_REQUEST_TIMEOUT_SECONDS,
+        follow_redirects=True,
+    ) as client:
         async with client.stream("GET", url) as response:
             response.raise_for_status()
             with target.open("wb") as fh:
@@ -129,6 +136,59 @@ def _extract_backend_archive(archive_path: Path, extract_dir: Path) -> Path:
     raise ValueError("不支持的 backend artifact 格式")
 
 
+def _normalize_architecture(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"amd64", "x86_64"}:
+        return "x86_64"
+    if normalized in {"aarch64", "arm64"}:
+        return "aarch64"
+    return normalized
+
+
+def _current_backend_runtime() -> dict[str, str]:
+    return {
+        "implementation": sys.implementation.name,
+        "python_abi": f"cp{sys.version_info.major}{sys.version_info.minor}",
+        "os": platform.system().lower(),
+        "architecture": _normalize_architecture(platform.machine()),
+    }
+
+
+def _validate_backend_artifact(extract_dir: Path) -> dict[str, Any]:
+    manifest_path = extract_dir / "movary-pro-artifact.json"
+    if not manifest_path.is_file():
+        raise ValueError("backend artifact 缺少二进制制品清单")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("artifact_type") != "backend":
+        raise ValueError("backend artifact 类型无效")
+    if manifest.get("format") != "cython-extension-zip":
+        raise ValueError("backend artifact 不是受支持的编译制品")
+
+    runtime = manifest.get("runtime") or {}
+    expected_runtime = _current_backend_runtime()
+    for key, expected in expected_runtime.items():
+        actual = str(runtime.get(key) or "").strip().lower()
+        if actual != expected:
+            raise ValueError(
+                f"backend artifact 运行时不兼容：{key}={actual or 'missing'}，需要 {expected}"
+            )
+
+    source_files = sorted(extract_dir.rglob("*.py")) + sorted(extract_dir.rglob("*.pyc"))
+    if source_files:
+        raise ValueError("backend artifact 包含 Python source 或 bytecode")
+    extension_files = sorted(extract_dir.rglob("*.so"))
+    if not extension_files:
+        raise ValueError("backend artifact 未包含编译扩展")
+    has_registry = any(
+        path.parent.name == "movary_backend_pro" and path.name.startswith("registry.")
+        for path in extension_files
+    )
+    if not has_registry:
+        raise ValueError("backend artifact 缺少 registry 编译扩展")
+    return manifest
+
+
 def _resolve_frontend_entry(path: Path) -> str | None:
     if path.is_file() and path.suffix == ".js":
         return _resolve_uploaded_url(path)
@@ -142,27 +202,30 @@ def _resolve_frontend_entry(path: Path) -> str | None:
 
 async def sync_pro_artifacts_from_license(provider_payload: dict[str, Any]) -> dict[str, Any]:
     state = load_pro_artifact_state()
-    version = str(provider_payload.get("artifact_version") or "").strip() or None
-    signature = str(provider_payload.get("artifact_signature") or "").strip() or None
+    backend_version = str(provider_payload.get("backend_artifact_version") or "").strip() or None
+    frontend_version = str(provider_payload.get("frontend_artifact_version") or "").strip() or None
 
     backend_url = str(provider_payload.get("backend_artifact_url") or "").strip()
     backend_sha = str(provider_payload.get("backend_sha256") or "").strip() or None
-    if backend_url and version:
-        backend_filename = Path(urlparse(backend_url).path).name or f"pro-backend-{version}.zip"
-        archive_path = _backend_root() / version / backend_filename
-        extract_dir = _backend_root() / version / "extracted"
+    if backend_url and backend_version:
+        backend_filename = (
+            Path(urlparse(backend_url).path).name or f"pro-backend-{backend_version}.zip"
+        )
+        archive_path = _backend_root() / backend_version / backend_filename
+        extract_dir = _backend_root() / backend_version / "extracted"
         await _download(backend_url, archive_path)
         actual_sha = _sha256(archive_path)
         if backend_sha and actual_sha != backend_sha:
             raise ValueError("backend artifact 校验失败")
         extracted_path = _extract_backend_archive(archive_path, extract_dir)
+        _validate_backend_artifact(extracted_path)
         state["backend"].update(
             {
                 "status": "ready",
-                "version": version,
+                "version": backend_version,
                 "source_url": backend_url,
                 "sha256": actual_sha,
-                "signature": signature,
+                "signature": None,
                 "archive_path": str(archive_path),
                 "extracted_path": str(extracted_path),
                 "error": None,
@@ -173,29 +236,34 @@ async def sync_pro_artifacts_from_license(provider_payload: dict[str, Any]) -> d
 
     frontend_url = str(provider_payload.get("frontend_artifact_url") or "").strip()
     frontend_sha = str(provider_payload.get("frontend_sha256") or "").strip() or None
-    if frontend_url and version:
-        frontend_filename = Path(urlparse(frontend_url).path).name or f"pro-frontend-{version}.js"
-        frontend_target = _frontend_root_fs() / version / frontend_filename
+    if frontend_url and frontend_version:
+        frontend_filename = (
+            Path(urlparse(frontend_url).path).name or f"pro-frontend-{frontend_version}.js"
+        )
+        frontend_target = _frontend_root_fs() / frontend_version / frontend_filename
         await _download(frontend_url, frontend_target)
         actual_sha = _sha256(frontend_target)
         if frontend_sha and actual_sha != frontend_sha:
             raise ValueError("frontend artifact 校验失败")
-        style_target = frontend_target.with_name("style.css")
+        style_filename = str(provider_payload.get("frontend_style_filename") or "").strip()
+        style_sha = str(provider_payload.get("frontend_style_sha256") or "").strip() or None
+        style_target = None
         local_style_url = None
-        style_url = frontend_url.rsplit("/", 1)[0] + "/style.css"
-        try:
+        if style_filename:
+            style_target = frontend_target.with_name(style_filename)
+            style_url = frontend_url.rsplit("/", 1)[0] + f"/{style_filename}"
             await _download(style_url, style_target)
+            if style_sha and _sha256(style_target) != style_sha:
+                raise ValueError("frontend style artifact 校验失败")
             local_style_url = _resolve_uploaded_url(style_target)
-        except Exception:  # noqa: BLE001
-            style_target = None
         local_entry_url = _resolve_frontend_entry(frontend_target)
         state["frontend"].update(
             {
                 "status": "ready" if local_entry_url else "cached",
-                "version": version,
+                "version": frontend_version,
                 "source_url": frontend_url,
                 "sha256": actual_sha,
-                "signature": signature,
+                "signature": None,
                 "file_path": str(frontend_target),
                 "local_entry_url": local_entry_url,
                 "style_file_path": str(style_target) if style_target else None,
@@ -210,9 +278,8 @@ async def sync_pro_artifacts_from_license(provider_payload: dict[str, Any]) -> d
 
 
 def get_effective_backend_extension_path() -> str | None:
-    explicit = (settings.MOVARY_BACKEND_PRO_PATH or "").strip()
-    if explicit:
-        return explicit
+    if (LOCAL_PRO_BACKEND_PATH / "movary_backend_pro").is_dir():
+        return str(LOCAL_PRO_BACKEND_PATH)
     runtime = evaluate_cached_license()
     if runtime.get("license_status") not in {"active", "expired"}:
         return None

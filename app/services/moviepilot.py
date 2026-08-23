@@ -2,7 +2,6 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-from app.core.config import settings
 
 
 class MoviePilotError(RuntimeError):
@@ -15,13 +14,12 @@ def _is_jwt(token: str) -> bool:
 
 def _build_headers(api_token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json"}
-    token = api_token or settings.MOVIEPILOT_API_TOKEN
-    if token:
-        if _is_jwt(token):
-            headers["Authorization"] = f"Bearer {token}"
-        headers["X-Api-Key"] = token
-        headers["X-API-KEY"] = token
-        headers["X-Token"] = token
+    if api_token:
+        if _is_jwt(api_token):
+            headers["Authorization"] = f"Bearer {api_token}"
+        headers["X-Api-Key"] = api_token
+        headers["X-API-KEY"] = api_token
+        headers["X-Token"] = api_token
     return headers
 
 
@@ -61,17 +59,16 @@ def _build_subscribe_body(payload: dict) -> dict:
 
 
 async def subscribe_vod(
-    payload: dict, base_url: str | None = None, api_token: str | None = None
+    payload: dict, base_url: str, api_token: str | None = None
 ) -> dict[str, Any]:
-    target_base = base_url or settings.MOVIEPILOT_BASE_URL
-    if not target_base:
+    if not base_url:
         raise MoviePilotError("MoviePilot base url not configured")
 
     body = _build_subscribe_body(payload)
     if "tmdbid" not in body and "doubanid" not in body:
         raise MoviePilotError("MoviePilot subscribe requires tmdbid or doubanid")
 
-    parsed = urlparse(target_base)
+    parsed = urlparse(base_url)
     base_path = (parsed.path or "").rstrip("/")
     if base_path.endswith("/subscribe"):
         subscribe_path = base_path
@@ -86,9 +83,8 @@ async def subscribe_vod(
     url = urlunparse(parsed._replace(path=subscribe_path))
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         params = {}
-        token = api_token or settings.MOVIEPILOT_API_TOKEN
-        if token:
-            params["token"] = token
+        if api_token:
+            params["token"] = api_token
         resp = await client.post(url, json=body, headers=_build_headers(api_token), params=params)
 
     if resp.status_code >= 400:

@@ -5,7 +5,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.core.config import settings
+from app.services import license_tokens
 from app.services.license_tokens import verify_signed_license
 
 
@@ -15,8 +15,8 @@ def _signed_license(monkeypatch, *, instance_id: str = "instance-1") -> str:
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    monkeypatch.setattr(settings, "MOVARY_LICENSE_PUBLIC_KEY", public_key.decode())
-    monkeypatch.setattr(settings, "MOVARY_LICENSE_KEY_ID", "test-key")
+    monkeypatch.setattr(license_tokens, "LICENSE_PUBLIC_KEY", public_key.decode())
+    monkeypatch.setattr(license_tokens, "LICENSE_KEY_ID", "test-key")
     return jwt.encode(
         {
             "edition": "pro",

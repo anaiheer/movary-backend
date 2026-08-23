@@ -47,20 +47,26 @@ def _route_specs_from_route_modules(route_modules: dict[str, str]) -> list[dict[
     return route_specs
 
 
+def _load_backend_extension_contract() -> tuple[dict[str, Any], dict[str, Any]]:
+    registry_module = importlib.import_module("movary_backend_pro.registry")
+    manifest_provider = getattr(registry_module, "get_backend_pro_manifest", None)
+    extension_provider = getattr(registry_module, "register_backend_extensions", None)
+    if not callable(manifest_provider) or not callable(extension_provider):
+        raise TypeError("movary_backend_pro.registry does not expose the extension contract")
+    return manifest_provider(), extension_provider()
+
+
 def initialize_backend_extensions() -> dict[str, Any]:
     global _extension_state
     if _extension_state is not None:
         return _extension_state
 
-    configured = list(settings.MOVARY_BACKEND_EXTENSIONS)
     loaded: list[dict[str, Any]] = []
     failed: list[dict[str, str]] = []
     route_specs: list[dict[str, Any]] = []
     effective_pro_path = get_effective_backend_extension_path()
-    should_try_pro = "pro" in configured or bool(effective_pro_path)
-    enabled = list(configured)
-    if should_try_pro and "pro" not in enabled:
-        enabled.append("pro")
+    should_try_pro = bool(effective_pro_path)
+    enabled = ["pro"] if should_try_pro else []
 
     if should_try_pro:
         try:
@@ -69,9 +75,7 @@ def initialize_backend_extensions() -> dict[str, Any]:
                 if pro_path not in sys.path:
                     sys.path.insert(0, pro_path)
 
-            extension_module = importlib.import_module("movary_backend_pro")
-            manifest = getattr(extension_module, "get_backend_pro_manifest", lambda: {})()
-            registry = getattr(extension_module, "register_backend_extensions", lambda: {})()
+            manifest, registry = _load_backend_extension_contract()
             current_route_specs = _route_specs_from_route_modules(registry.get("route_modules", {}))
             route_specs.extend(current_route_specs)
             loaded.append(

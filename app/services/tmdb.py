@@ -114,7 +114,7 @@ async def request_tmdb(
     for candidate in _proxy_candidates(proxy_url):
         try:
             if candidate:
-                async with httpx.AsyncClient(timeout=timeout, proxies=candidate) as client:
+                async with httpx.AsyncClient(timeout=timeout, proxy=candidate) as client:
                     return await client.get(url, params=params)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 return await client.get(url, params=params)

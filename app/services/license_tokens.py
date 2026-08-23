@@ -6,7 +6,7 @@ from typing import Any
 import jwt
 from jwt import ExpiredSignatureError, InvalidTokenError
 
-from app.core.config import settings
+from app.core.license_config import LICENSE_KEY_ID, LICENSE_PUBLIC_KEY
 
 LICENSE_ALGORITHM = "RS256"
 
@@ -31,11 +31,11 @@ def verify_signed_license(token: str, *, expected_instance_id: str) -> dict[str,
     if not normalized:
         raise ValueError("许可证内容为空")
 
-    public_key = normalize_pem(settings.MOVARY_LICENSE_PUBLIC_KEY)
+    public_key = normalize_pem(LICENSE_PUBLIC_KEY)
     if not public_key:
         raise ValueError("未配置授权服务公钥")
 
-    expected_key_id = (settings.MOVARY_LICENSE_KEY_ID or "").strip()
+    expected_key_id = LICENSE_KEY_ID.strip()
     try:
         header = jwt.get_unverified_header(normalized)
     except InvalidTokenError as exc:

@@ -56,4 +56,4 @@ dmypy.json
 .claude/
 test.db
 runtime/
-uploads/runtime/
+uploads/

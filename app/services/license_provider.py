@@ -4,7 +4,13 @@ from typing import Any
 
 import httpx
 
-from app.core.config import settings
+from app import __version__
+from app.core.license_config import (
+    LICENSE_KEY_ID,
+    LICENSE_PUBLIC_KEY,
+    LICENSE_REQUEST_TIMEOUT_SECONDS,
+    license_settings,
+)
 
 
 def _normalize_key_value(value: str | None) -> str:
@@ -13,9 +19,9 @@ def _normalize_key_value(value: str | None) -> str:
 
 
 def get_license_provider_status() -> dict[str, Any]:
-    server_url = _normalize_key_value(settings.MOVARY_LICENSE_SERVER_URL)
-    public_key = _normalize_key_value(settings.MOVARY_LICENSE_PUBLIC_KEY)
-    key_id = _normalize_key_value(settings.MOVARY_LICENSE_KEY_ID)
+    server_url = _normalize_key_value(license_settings.provider_url)
+    public_key = _normalize_key_value(LICENSE_PUBLIC_KEY)
+    key_id = _normalize_key_value(LICENSE_KEY_ID)
 
     missing_fields: list[str] = []
     if not server_url:
@@ -43,8 +49,7 @@ def _provider_base_url() -> str:
 
 
 async def _post_provider(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    timeout = max(int(settings.MOVARY_LICENSE_REQUEST_TIMEOUT or 10), 1)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=LICENSE_REQUEST_TIMEOUT_SECONDS) as client:
         response = await client.post(f"{_provider_base_url()}{path}", json=payload)
     if response.status_code >= 400:
         detail = ""
@@ -71,6 +76,7 @@ async def activate_remote_license(
             "instance_id": instance_id,
             "edition": edition,
             "instance_label": instance_label,
+            "base_version": __version__,
         },
     )
 
@@ -78,7 +84,7 @@ async def activate_remote_license(
 async def refresh_remote_license(*, license_token: str, instance_id: str) -> dict[str, Any]:
     return await _post_provider(
         "/license/refresh",
-        {"license": license_token, "instance_id": instance_id},
+        {"license": license_token, "instance_id": instance_id, "base_version": __version__},
     )
 
 
@@ -87,22 +93,3 @@ async def deactivate_remote_license(*, license_token: str, instance_id: str) -> 
         "/license/deactivate",
         {"license": license_token, "instance_id": instance_id},
     )
-
-
-async def get_license_provider_health() -> tuple[bool, str]:
-    provider = get_license_provider_status()
-    if not provider["ready"] or not provider["server_url"]:
-        return False, "在线授权服务未配置完成"
-
-    timeout = max(int(settings.MOVARY_LICENSE_REQUEST_TIMEOUT or 10), 1)
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(f"{str(provider['server_url']).rstrip('/')}/license/health")
-        if response.status_code >= 400:
-            return False, f"授权服务不可用 ({response.status_code})"
-        payload = response.json()
-        if payload.get("status") == "ok":
-            return True, "在线授权服务可用"
-        return False, "在线授权服务响应异常"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"无法连接在线授权服务: {exc}"

@@ -17,14 +17,6 @@ class LicenseInfo(BaseModel):
 
 
 class AdminLicenseStatus(LicenseInfo):
-    activation_mode: str
-    provider_mode: str = "local_stub"
-    provider_ready: bool = False
-    provider_reachable: bool = False
-    provider_health_message: Optional[str] = None
-    provider_server_url: Optional[str] = None
-    provider_key_id: Optional[str] = None
-    provider_missing_fields: list[str] = []
     activation_present: bool = False
     activation_code_hint: Optional[str] = None
     activated_at: Optional[str] = None
@@ -35,30 +27,6 @@ class AdminLicenseStatus(LicenseInfo):
     license_id: Optional[str] = None
     package_code: Optional[str] = None
     package_name: Optional[str] = None
-    pro_effective: bool = False
-    artifact_version: Optional[str] = None
-    backend_artifact_status: Optional[str] = None
-    backend_artifact_error: Optional[str] = None
-    frontend_artifact_status: Optional[str] = None
-    frontend_artifact_error: Optional[str] = None
-    frontend_artifact_entry_url: Optional[str] = None
-    frontend_artifact_style_url: Optional[str] = None
-    extension_enabled: bool
-    extension_loaded: bool
-    extension_failed: bool
-    loaded_extensions: list[dict] = []
-    failed_extensions: list[dict] = []
-
-
-class AdminLicenseProviderContract(BaseModel):
-    provider_mode: str
-    provider_ready: bool
-    provider_server_url: Optional[str] = None
-    provider_key_id: Optional[str] = None
-    required_env: list[str] = []
-    missing_env: list[str] = []
-    remote_endpoints: list[dict] = []
-    activation_flow: list[str] = []
 
 
 class KpiStats(BaseModel):

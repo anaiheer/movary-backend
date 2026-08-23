@@ -6,6 +6,7 @@ import json
 import zipfile
 from uuid import uuid4
 
+from app import __version__
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -35,13 +36,10 @@ from app.models.telegram import (
     TelegramUserBinding,
 )
 from app.models.user import User, UserRole
-from app.schemas.admin import AdminLicenseProviderContract, AdminLicenseStatus
-from app.services.license_contract import get_license_provider_contract
+from app.schemas.admin import AdminLicenseStatus
 from app.services.license_provider import (
     activate_remote_license,
     deactivate_remote_license,
-    get_license_provider_health,
-    get_license_provider_status,
     refresh_remote_license,
 )
 from app.services.license_runtime import (
@@ -53,7 +51,7 @@ from app.services.license_runtime import (
     update_cached_license_refresh,
 )
 from app.services.license_tokens import verify_signed_license
-from app.services.pro_artifacts import get_public_artifact_state, sync_pro_artifacts_from_license
+from app.services.pro_artifacts import sync_pro_artifacts_from_license
 
 router = APIRouter(prefix="/admin/license", tags=["admin-license"])
 
@@ -73,8 +71,16 @@ def _response(data: dict, message: str = "") -> dict:
 def _ensure_provider_artifact_payload(provider_payload: dict) -> None:
     backend_url = str(provider_payload.get("backend_artifact_url") or "").strip()
     frontend_url = str(provider_payload.get("frontend_artifact_url") or "").strip()
-    artifact_version = str(provider_payload.get("artifact_version") or "").strip()
-    if backend_url and frontend_url and artifact_version:
+    base_version = str(provider_payload.get("base_version") or "").strip()
+    backend_version = str(provider_payload.get("backend_artifact_version") or "").strip()
+    frontend_version = str(provider_payload.get("frontend_artifact_version") or "").strip()
+    if (
+        backend_url
+        and frontend_url
+        and backend_version
+        and frontend_version
+        and base_version == __version__
+    ):
         return
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
@@ -258,24 +264,13 @@ async def get_admin_license_status(
     await _ensure_admin(current_user, db)
     extension_state = get_backend_extension_state()
     runtime_state = evaluate_cached_license(load_license_state())
-    provider_state = get_license_provider_status()
-    provider_reachable, provider_health_message = await get_license_provider_health()
     identity = get_or_create_instance_identity()
-    artifacts = get_public_artifact_state()
     overview = build_license_overview(extension_state, runtime_state)
     payload = AdminLicenseStatus(
         edition=overview["edition"],
         status=overview["status"],
         message=overview["message"],
         manage_url=overview["manage_url"],
-        activation_mode="online_signed",
-        provider_mode=provider_state["mode"],
-        provider_ready=bool(provider_state["ready"]),
-        provider_reachable=provider_reachable,
-        provider_health_message=provider_health_message,
-        provider_server_url=provider_state["server_url"],
-        provider_key_id=provider_state["key_id"],
-        provider_missing_fields=provider_state["missing_fields"],
         activation_present=bool(runtime_state["activation_present"]),
         activation_code_hint=runtime_state["activation_code_hint"],
         activated_at=runtime_state["activated_at"],
@@ -286,31 +281,7 @@ async def get_admin_license_status(
         license_id=runtime_state.get("license_id"),
         package_code=runtime_state.get("package_code"),
         package_name=runtime_state.get("package_name"),
-        pro_effective=bool(extension_state.get("pro_effective")),
-        artifact_version=artifacts.get("backend", {}).get("version")
-        or artifacts.get("frontend", {}).get("version"),
-        backend_artifact_status=artifacts.get("backend", {}).get("status"),
-        backend_artifact_error=artifacts.get("backend", {}).get("error"),
-        frontend_artifact_status=artifacts.get("frontend", {}).get("status"),
-        frontend_artifact_error=artifacts.get("frontend", {}).get("error"),
-        frontend_artifact_entry_url=artifacts.get("frontend", {}).get("local_entry_url"),
-        frontend_artifact_style_url=artifacts.get("frontend", {}).get("local_style_url"),
-        extension_enabled="pro" in extension_state["enabled"],
-        extension_loaded=any(item.get("name") == "pro" for item in extension_state["loaded"]),
-        extension_failed=any(item.get("name") == "pro" for item in extension_state["failed"]),
-        loaded_extensions=extension_state["loaded"],
-        failed_extensions=extension_state["failed"],
     )
-    return _response(payload.model_dump())
-
-
-@router.get("/provider-contract")
-async def get_admin_license_provider_contract(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    await _ensure_admin(current_user, db)
-    payload = AdminLicenseProviderContract(**get_license_provider_contract())
     return _response(payload.model_dump())
 
 

@@ -35,9 +35,8 @@ Tests run against SQLite; production uses PostgreSQL (asyncpg) and Redis.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust. Key variables: `DATABASE_URL`, `REDIS_URL`,
-`SECRET_KEY`, `EMBY_BASE_URLS` / `EMBY_API_KEYS`, `MOVIEPILOT_*`, `TMDB_API_KEY`.
-
+Copy `.env.example` to `.env` and adjust. Key variables include `DATABASE_URL`, `REDIS_URL`,
+`SECRET_KEY`, `EMBY_PASSWORD_KEY`, and `TMDB_API_KEY`.
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)

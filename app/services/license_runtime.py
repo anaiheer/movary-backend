@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
+from app.core.license_config import license_settings
 from app.services.license_tokens import verify_signed_license
 
 
@@ -23,23 +24,20 @@ def _safe_datetime(value: Any) -> str | None:
 
 
 def get_license_state_file() -> Path:
-    if settings.MOVARY_LICENSE_STATE_FILE:
-        return Path(settings.MOVARY_LICENSE_STATE_FILE).expanduser().resolve()
+    if license_settings.state_file:
+        return Path(license_settings.state_file).expanduser().resolve()
     base_dir = Path(__file__).resolve().parent.parent.parent
     return (base_dir / "runtime" / "license-state.json").resolve()
 
 
 def get_license_instance_file() -> Path:
-    if settings.MOVARY_LICENSE_INSTANCE_FILE:
-        return Path(settings.MOVARY_LICENSE_INSTANCE_FILE).expanduser().resolve()
+    if license_settings.instance_file:
+        return Path(license_settings.instance_file).expanduser().resolve()
     base_dir = Path(__file__).resolve().parent.parent.parent
     return (base_dir / "runtime" / "license-instance.json").resolve()
 
 
 def _default_instance_label() -> str:
-    explicit = (settings.MOVARY_LICENSE_INSTANCE_LABEL or "").strip()
-    if explicit:
-        return explicit
     if settings.FRONTEND_BASE_URL:
         return str(settings.FRONTEND_BASE_URL).strip().rstrip("/")
     return socket.gethostname()
