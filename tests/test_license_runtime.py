@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.services.license_runtime import (
     clear_cached_license,
     get_or_create_instance_identity,
@@ -38,3 +39,28 @@ def test_license_runtime_identity_and_clear_roundtrip(tmp_path) -> None:
     cleared = clear_cached_license(state_file)
     assert cleared["activation_present"] is False
     assert cleared["package_name"] is None
+
+
+def test_instance_identity_does_not_use_loopback_frontend_url(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173")
+    monkeypatch.setattr("app.services.license_runtime.socket.gethostname", lambda: "movary-host")
+
+    identity = get_or_create_instance_identity(tmp_path / "license-instance.json")
+
+    assert identity["instance_label"] == "movary-host"
+
+
+def test_instance_identity_accepts_and_persists_public_origin(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173")
+    instance_file = tmp_path / "license-instance.json"
+    initial = get_or_create_instance_identity(instance_file)
+
+    updated = get_or_create_instance_identity(
+        instance_file,
+        instance_label="https://movary.example.com/",
+    )
+    reloaded = get_or_create_instance_identity(instance_file)
+
+    assert updated["instance_id"] == initial["instance_id"]
+    assert updated["instance_label"] == "https://movary.example.com"
+    assert reloaded == updated
