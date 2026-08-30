@@ -81,6 +81,41 @@ async def test_admin_license_provider_contract_is_not_public(async_client, admin
     assert response.status_code == 404
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("get", "/api/v1/admin/license/export", None),
+        ("post", "/api/v1/admin/license/rollback", {"confirm": True}),
+    ],
+)
+async def test_base_edition_rejects_pro_data_actions(
+    async_client,
+    admin_token,
+    monkeypatch,
+    tmp_path,
+    method,
+    path,
+    body,
+) -> None:
+    monkeypatch.setattr(license_settings, "state_file", str(tmp_path / "license-state.json"))
+    monkeypatch.setattr(
+        license_settings,
+        "instance_file",
+        str(tmp_path / "license-instance.json"),
+    )
+
+    response = await async_client.request(
+        method,
+        path,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=body,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "当前未激活专业版，无需导出或回退"
+
+
 def test_public_env_example_hides_license_infrastructure_settings() -> None:
     env_example = (Path(__file__).parents[1] / ".env.example").read_text(encoding="utf-8")
 

@@ -5,6 +5,7 @@ import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.core.config import settings
@@ -37,32 +38,61 @@ def get_license_instance_file() -> Path:
     return (base_dir / "runtime" / "license-instance.json").resolve()
 
 
+def _normalize_instance_label(value: Any) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _is_loopback_instance_label(value: str) -> bool:
+    normalized = _normalize_instance_label(value)
+    if not normalized:
+        return False
+    parsed = urlparse(normalized if "://" in normalized else f"//{normalized}")
+    return (parsed.hostname or "").lower() in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
 def _default_instance_label() -> str:
-    if settings.FRONTEND_BASE_URL:
-        return str(settings.FRONTEND_BASE_URL).strip().rstrip("/")
+    configured_url = _normalize_instance_label(settings.FRONTEND_BASE_URL)
+    if configured_url and not _is_loopback_instance_label(configured_url):
+        return configured_url
     return socket.gethostname()
 
 
-def get_or_create_instance_identity(path: Path | None = None) -> dict[str, str]:
-    instance_file = path or get_license_instance_file()
-    if instance_file.exists():
-        payload = json.loads(instance_file.read_text(encoding="utf-8"))
-        instance_id = str(payload.get("instance_id") or "").strip()
-        if instance_id:
-            return {
-                "instance_id": instance_id,
-                "instance_label": str(payload.get("instance_label") or _default_instance_label()),
-            }
-
-    payload = {
-        "instance_id": str(uuid4()),
-        "instance_label": _default_instance_label(),
-    }
+def _write_instance_identity(instance_file: Path, payload: dict[str, str]) -> None:
     instance_file.parent.mkdir(parents=True, exist_ok=True)
     instance_file.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def get_or_create_instance_identity(
+    path: Path | None = None,
+    *,
+    instance_label: str | None = None,
+) -> dict[str, str]:
+    instance_file = path or get_license_instance_file()
+    requested_label = _normalize_instance_label(instance_label)
+    if instance_file.exists():
+        payload = json.loads(instance_file.read_text(encoding="utf-8"))
+        instance_id = str(payload.get("instance_id") or "").strip()
+        if instance_id:
+            stored_label = _normalize_instance_label(payload.get("instance_label"))
+            resolved_label = requested_label or stored_label
+            if not resolved_label or _is_loopback_instance_label(resolved_label):
+                resolved_label = _default_instance_label()
+            identity = {
+                "instance_id": instance_id,
+                "instance_label": resolved_label,
+            }
+            if identity != payload:
+                _write_instance_identity(instance_file, identity)
+            return identity
+
+    payload = {
+        "instance_id": str(uuid4()),
+        "instance_label": requested_label or _default_instance_label(),
+    }
+    _write_instance_identity(instance_file, payload)
     return payload
 
 

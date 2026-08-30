@@ -58,6 +58,7 @@ router = APIRouter(prefix="/admin/license", tags=["admin-license"])
 
 class LicenseActivateRequest(BaseModel):
     code: str = Field(min_length=1, max_length=255)
+    instance_label: str | None = Field(default=None, max_length=255)
 
 
 class LicenseRollbackRequest(BaseModel):
@@ -256,6 +257,16 @@ async def _ensure_admin(current_user: dict, db: AsyncSession) -> User:
     return user
 
 
+def _ensure_pro_data_actions_available() -> None:
+    runtime_state = evaluate_cached_license(load_license_state())
+    if runtime_state.get("activation_present"):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="当前未激活专业版，无需导出或回退",
+    )
+
+
 @router.get("/status")
 async def get_admin_license_status(
     current_user: dict = Depends(get_current_user),
@@ -292,7 +303,7 @@ async def activate_admin_license(
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_admin(current_user, db)
-    identity = get_or_create_instance_identity()
+    identity = get_or_create_instance_identity(instance_label=payload.instance_label)
     try:
         provider_payload = await activate_remote_license(
             code=payload.code.strip(),
@@ -406,6 +417,7 @@ async def export_license_downgrade_data(
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_admin(current_user, db)
+    _ensure_pro_data_actions_available()
     payload = await _build_export_zip(db)
     return StreamingResponse(
         io.BytesIO(payload),
@@ -421,6 +433,7 @@ async def rollback_to_free(
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_admin(current_user, db)
+    _ensure_pro_data_actions_available()
     if not payload.confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="请明确确认回退到基础版"
