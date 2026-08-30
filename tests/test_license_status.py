@@ -1,4 +1,33 @@
+import pytest
+
 from app.core.license_status import build_license_overview
+
+
+@pytest.mark.parametrize(
+    ("extension_state", "runtime_state"),
+    [
+        (
+            {"enabled": ["pro"], "loaded": [{"name": "pro"}], "failed": []},
+            {"license_status": "active"},
+        ),
+        (
+            {"enabled": ["pro"], "loaded": [], "failed": [{"name": "pro"}]},
+            {"license_status": "active"},
+        ),
+        ({"enabled": ["pro"], "loaded": [], "failed": []}, {"license_status": "active"}),
+        ({"enabled": [], "loaded": [], "failed": [{"name": "pro"}]}, None),
+        ({"enabled": ["pro"], "loaded": [], "failed": []}, {"license_status": "expired"}),
+        ({"enabled": ["pro"], "loaded": [], "failed": []}, {"license_status": "invalid"}),
+        ({"enabled": ["pro"], "loaded": [], "failed": []}, None),
+        ({"enabled": [], "loaded": [], "failed": []}, None),
+    ],
+)
+def test_license_overview_points_every_state_to_settings(
+    extension_state: dict, runtime_state: dict | None
+) -> None:
+    overview = build_license_overview(extension_state, runtime_state)
+
+    assert overview["manage_url"] == "/admin/settings?tab=license"
 
 
 def test_license_overview_defaults_to_base_when_no_pro_extension_is_enabled() -> None:
