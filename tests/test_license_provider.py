@@ -2,8 +2,10 @@ from hashlib import sha256
 
 import pytest
 from cryptography.hazmat.primitives import serialization
+from fastapi import HTTPException
 
 from app import __version__
+from app.api.routes import admin_license
 from app.core.license_config import (
     DEFAULT_LICENSE_PROVIDER_URL,
     LICENSE_KEY_ID,
@@ -55,6 +57,115 @@ def test_license_provider_reports_official_signed_mode(monkeypatch) -> None:
     assert status["missing_fields"] == []
     assert status["server_url"] == "https://movary.top"
     assert status["key_id"] == LICENSE_KEY_ID
+
+
+@pytest.mark.asyncio
+async def test_provider_connection_errors_are_reported_as_provider_errors(monkeypatch) -> None:
+    class FailingClient:
+        async def __aenter__(self):
+            raise license_provider.httpx.ConnectError("connection refused")
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        license_provider.httpx,
+        "AsyncClient",
+        lambda **_kwargs: FailingClient(),
+    )
+
+    with pytest.raises(license_provider.LicenseProviderError, match="授权服务暂时不可用"):
+        await license_provider.activate_remote_license(
+            code="activation-code",
+            instance_id="instance-id",
+            edition="pro",
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_5xx_responses_are_reported_as_provider_errors(monkeypatch) -> None:
+    class Response:
+        status_code = 503
+        text = "service unavailable"
+
+        @staticmethod
+        def json() -> dict[str, str]:
+            return {"detail": "service unavailable"}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(license_provider.httpx, "AsyncClient", lambda **_kwargs: Client())
+
+    with pytest.raises(license_provider.LicenseProviderError, match="service unavailable"):
+        await license_provider.activate_remote_license(
+            code="activation-code",
+            instance_id="instance-id",
+            edition="pro",
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_invalid_success_payload_is_reported_as_provider_error(monkeypatch) -> None:
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, str]:
+            raise ValueError("invalid json")
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(license_provider.httpx, "AsyncClient", lambda **_kwargs: Client())
+
+    with pytest.raises(license_provider.LicenseProviderError, match="无效响应"):
+        await license_provider.activate_remote_license(
+            code="activation-code",
+            instance_id="instance-id",
+            edition="pro",
+        )
+
+
+@pytest.mark.asyncio
+async def test_admin_activate_maps_provider_errors_to_bad_gateway(monkeypatch) -> None:
+    async def allow_admin(*_args, **_kwargs) -> None:
+        return None
+
+    async def fail_activation(**_kwargs):
+        raise license_provider.LicenseProviderError("provider unavailable")
+
+    monkeypatch.setattr(admin_license, "_ensure_admin", allow_admin)
+    monkeypatch.setattr(
+        admin_license,
+        "get_or_create_instance_identity",
+        lambda **_kwargs: {"instance_id": "instance-id", "instance_label": None},
+    )
+    monkeypatch.setattr(admin_license, "activate_remote_license", fail_activation)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_license.activate_admin_license(
+            payload=admin_license.LicenseActivateRequest(code="activation-code"),
+            current_user={},
+            db=None,
+        )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == "provider unavailable"
 
 
 @pytest.mark.asyncio
