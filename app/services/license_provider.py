@@ -13,6 +13,10 @@ from app.core.license_config import (
 )
 
 
+class LicenseProviderError(ValueError):
+    """Raised when the official license provider cannot serve a valid response."""
+
+
 def _normalize_key_value(value: str | None) -> str:
     normalized = (value or "").strip()
     return normalized
@@ -49,8 +53,11 @@ def _provider_base_url() -> str:
 
 
 async def _post_provider(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=LICENSE_REQUEST_TIMEOUT_SECONDS) as client:
-        response = await client.post(f"{_provider_base_url()}{path}", json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=LICENSE_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.post(f"{_provider_base_url()}{path}", json=payload)
+    except httpx.HTTPError as exc:
+        raise LicenseProviderError(f"授权服务暂时不可用：{exc}") from exc
     if response.status_code >= 400:
         detail = ""
         try:
@@ -58,8 +65,17 @@ async def _post_provider(path: str, payload: dict[str, Any]) -> dict[str, Any]:
             detail = str(body.get("detail") or body.get("message") or "").strip()
         except Exception:  # noqa: BLE001
             detail = response.text.strip()
-        raise ValueError(detail or f"授权服务请求失败 ({response.status_code})")
-    return response.json()
+        message = detail or f"授权服务请求失败 ({response.status_code})"
+        if response.status_code >= 500:
+            raise LicenseProviderError(message)
+        raise ValueError(message)
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise LicenseProviderError("授权服务返回了无效响应") from exc
+    if not isinstance(body, dict):
+        raise LicenseProviderError("授权服务返回了无效响应")
+    return body
 
 
 async def activate_remote_license(
