@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import zipfile
 from uuid import uuid4
 
@@ -55,6 +56,8 @@ from app.services.license_tokens import verify_signed_license
 from app.services.pro_artifacts import ProArtifactError, sync_pro_artifacts_from_license
 
 router = APIRouter(prefix="/admin/license", tags=["admin-license"])
+logger = logging.getLogger(__name__)
+PRO_ARTIFACT_UNAVAILABLE_DETAIL = "专业版制品服务暂时不可用，请稍后重试"
 
 
 class LicenseActivateRequest(BaseModel):
@@ -343,9 +346,10 @@ async def activate_admin_license(
             detail=str(exc),
         ) from exc
     except ProArtifactError as exc:
+        logger.warning("Failed to sync licensed Pro artifacts", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"专业版制品服务暂时不可用：{exc}",
+            detail=PRO_ARTIFACT_UNAVAILABLE_DETAIL,
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -398,9 +402,10 @@ async def refresh_admin_license(
             detail=str(exc),
         ) from exc
     except ProArtifactError as exc:
+        logger.warning("Failed to sync licensed Pro artifacts", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"专业版制品服务暂时不可用：{exc}",
+            detail=PRO_ARTIFACT_UNAVAILABLE_DETAIL,
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
