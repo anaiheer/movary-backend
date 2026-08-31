@@ -20,6 +20,10 @@ from app.services.license_runtime import evaluate_cached_license
 LOCAL_PRO_BACKEND_PATH = Path("/app/movary-backend-pro")
 
 
+class ProArtifactError(ValueError):
+    """Raised when a licensed Pro artifact cannot be downloaded or validated."""
+
+
 def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
@@ -110,15 +114,24 @@ def _sha256(path: Path) -> str:
 
 async def _download(url: str, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(
-        timeout=LICENSE_REQUEST_TIMEOUT_SECONDS,
-        follow_redirects=True,
-    ) as client:
-        async with client.stream("GET", url) as response:
-            response.raise_for_status()
-            with target.open("wb") as fh:
-                async for chunk in response.aiter_bytes():
-                    fh.write(chunk)
+    temporary_target = target.with_name(f".{target.name}.part")
+    try:
+        async with httpx.AsyncClient(
+            timeout=LICENSE_REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=True,
+        ) as client:
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                with temporary_target.open("wb") as fh:
+                    async for chunk in response.aiter_bytes():
+                        fh.write(chunk)
+        temporary_target.replace(target)
+    except httpx.HTTPError as exc:
+        temporary_target.unlink(missing_ok=True)
+        raise ProArtifactError(f"下载 Pro artifact 失败：{url}（{exc}）") from exc
+    except OSError as exc:
+        temporary_target.unlink(missing_ok=True)
+        raise ProArtifactError(f"保存 Pro artifact 失败：{target.name}（{exc}）") from exc
 
 
 def _extract_backend_archive(archive_path: Path, extract_dir: Path) -> Path:

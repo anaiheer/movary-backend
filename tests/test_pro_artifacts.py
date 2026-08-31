@@ -96,6 +96,32 @@ def test_backend_extension_contract_loads_registry_module(
 
 
 @pytest.mark.asyncio
+async def test_download_wraps_connect_error_and_removes_partial_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "artifact.zip"
+
+    class FailingClient:
+        async def __aenter__(self):
+            raise __import__("httpx").ConnectError("connection refused")
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        pro_artifacts.httpx,
+        "AsyncClient",
+        lambda **_kwargs: FailingClient(),
+    )
+
+    with pytest.raises(pro_artifacts.ProArtifactError, match="下载 Pro artifact 失败"):
+        await pro_artifacts._download("http://provider/artifact.zip", target)
+
+    assert not target.exists()
+    assert not target.with_name(".artifact.zip.part").exists()
+
+
+@pytest.mark.asyncio
 async def test_sync_uses_independent_backend_and_frontend_pro_versions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

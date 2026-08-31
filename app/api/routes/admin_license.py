@@ -38,6 +38,7 @@ from app.models.telegram import (
 from app.models.user import User, UserRole
 from app.schemas.admin import AdminLicenseStatus
 from app.services.license_provider import (
+    LicenseProviderError,
     activate_remote_license,
     deactivate_remote_license,
     refresh_remote_license,
@@ -51,7 +52,7 @@ from app.services.license_runtime import (
     update_cached_license_refresh,
 )
 from app.services.license_tokens import verify_signed_license
-from app.services.pro_artifacts import sync_pro_artifacts_from_license
+from app.services.pro_artifacts import ProArtifactError, sync_pro_artifacts_from_license
 
 router = APIRouter(prefix="/admin/license", tags=["admin-license"])
 
@@ -336,6 +337,16 @@ async def activate_admin_license(
 
         reset_backend_extensions()
         include_extension_routes(fastapi_app)
+    except LicenseProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except ProArtifactError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"专业版制品服务暂时不可用：{exc}",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _response(state, "专业版授权已激活")
@@ -381,6 +392,16 @@ async def refresh_admin_license(
 
         reset_backend_extensions()
         include_extension_routes(fastapi_app)
+    except LicenseProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except ProArtifactError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"专业版制品服务暂时不可用：{exc}",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _response(state, "专业版授权刷新成功")
@@ -400,6 +421,11 @@ async def deactivate_admin_license(
                 license_token=str(runtime_state["license"]),
                 instance_id=identity["instance_id"],
             )
+    except LicenseProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     state = clear_cached_license()
