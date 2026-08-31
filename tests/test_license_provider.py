@@ -169,6 +169,55 @@ async def test_admin_activate_maps_provider_errors_to_bad_gateway(monkeypatch) -
 
 
 @pytest.mark.asyncio
+async def test_admin_activate_hides_artifact_download_details(monkeypatch) -> None:
+    artifact_url = "https://0.0.0.0:3000/artifacts/backend/v1.0.7/backend.zip"
+
+    async def allow_admin(*_args, **_kwargs) -> None:
+        return None
+
+    async def activate_license(**_kwargs):
+        return {
+            "base_version": admin_license.__version__,
+            "backend_artifact_version": "v1.0.7",
+            "backend_artifact_url": artifact_url,
+            "frontend_artifact_version": "v1.0.7",
+            "frontend_artifact_url": "https://0.0.0.0:3000/artifacts/frontend/v1.0.7/index.js",
+            "license": "signed-license",
+        }
+
+    async def fail_artifact_sync(_provider_payload):
+        raise admin_license.ProArtifactError(
+            f"下载 Pro artifact 失败：{artifact_url}（connection refused）"
+        )
+
+    monkeypatch.setattr(admin_license, "_ensure_admin", allow_admin)
+    monkeypatch.setattr(
+        admin_license,
+        "get_or_create_instance_identity",
+        lambda **_kwargs: {"instance_id": "instance-id", "instance_label": None},
+    )
+    monkeypatch.setattr(admin_license, "activate_remote_license", activate_license)
+    monkeypatch.setattr(
+        admin_license,
+        "verify_signed_license",
+        lambda *_args, **_kwargs: {"license_id": "license-id"},
+    )
+    monkeypatch.setattr(admin_license, "sync_pro_artifacts_from_license", fail_artifact_sync)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_license.activate_admin_license(
+            payload=admin_license.LicenseActivateRequest(code="activation-code"),
+            current_user={},
+            db=None,
+        )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == "专业版制品服务暂时不可用，请稍后重试"
+    assert artifact_url not in str(exc_info.value.detail)
+    assert "connection refused" not in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
 async def test_activate_reports_base_version_to_artifact_provider(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

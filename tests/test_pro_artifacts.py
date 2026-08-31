@@ -114,9 +114,11 @@ async def test_download_wraps_connect_error_and_removes_partial_file(
         lambda **_kwargs: FailingClient(),
     )
 
-    with pytest.raises(pro_artifacts.ProArtifactError, match="下载 Pro artifact 失败"):
+    with pytest.raises(pro_artifacts.ProArtifactError, match="下载 Pro artifact 失败") as exc_info:
         await pro_artifacts._download("http://provider/artifact.zip", target)
 
+    assert "http://provider/artifact.zip" not in str(exc_info.value)
+    assert "connection refused" not in str(exc_info.value)
     assert not target.exists()
     assert not target.with_name(".artifact.zip.part").exists()
 

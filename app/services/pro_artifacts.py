@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import platform
 import shutil
 import sys
@@ -18,6 +19,7 @@ from app.core.license_config import LICENSE_REQUEST_TIMEOUT_SECONDS
 from app.services.license_runtime import evaluate_cached_license
 
 LOCAL_PRO_BACKEND_PATH = Path("/app/movary-backend-pro")
+logger = logging.getLogger(__name__)
 
 
 class ProArtifactError(ValueError):
@@ -128,10 +130,12 @@ async def _download(url: str, target: Path) -> None:
         temporary_target.replace(target)
     except httpx.HTTPError as exc:
         temporary_target.unlink(missing_ok=True)
-        raise ProArtifactError(f"下载 Pro artifact 失败：{url}（{exc}）") from exc
+        logger.warning("Failed to download Pro artifact from %s", url, exc_info=exc)
+        raise ProArtifactError("下载 Pro artifact 失败") from exc
     except OSError as exc:
         temporary_target.unlink(missing_ok=True)
-        raise ProArtifactError(f"保存 Pro artifact 失败：{target.name}（{exc}）") from exc
+        logger.warning("Failed to save Pro artifact to %s", target, exc_info=exc)
+        raise ProArtifactError("保存 Pro artifact 失败") from exc
 
 
 def _extract_backend_archive(archive_path: Path, extract_dir: Path) -> Path:
